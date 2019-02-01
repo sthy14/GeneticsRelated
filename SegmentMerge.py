@@ -1,9 +1,10 @@
 #Tetrads Recombination
 class GeneSegment:
-    def __init__(self, _id, _start, _end):
+    def __init__(self, _id, _start, _end, _parent):
         self.id = _id
         self.start = _start
         self.end = _end
+        self.parent = _parent
 
     def __lt__(self, another):
         if (self.start < another.start):
@@ -23,7 +24,7 @@ class GeneSegment:
 
     def __str__(self):
         res = ''
-        res += self.id + ':(' + str(self.start) + ',' + str(self.end) + ')'
+        res += self.id + ',' + self.parent + ',' + str(self.start) + ',' + str(self.end)
         return res
 
 class MergedSegment:
@@ -35,6 +36,12 @@ class MergedSegment:
 
     def RemoveSegment(self, genesegment):
         self.segments.remove(genesegment)
+
+    def __str__(self):
+        res = ''
+        for segment in self.segments:
+            res += segment.id
+        return res
 
 class SegmentResult:
     def __init__(self):
@@ -55,7 +62,23 @@ class SegmentResult:
         conversions = MergedSegment()
         for segment in listofseg:
             conversions.AddSegment(segment)
+        for mergedsegment in self.results:
+            partlength = len(mergedsegment.segments) - 1
+            if partlength > 0:
+                for pos in range(partlength):
+                    currseg = mergedsegment.segments[pos]
+                    nextseg = mergedsegment.segments[pos + 1]
+                    if currseg.id != nextseg.id and nextseg.start < currseg.end:
+                        convseg = GeneSegment(nextseg.id, nextseg.start, currseg.end, currseg.parent)
+                        conversions.AddSegment(convseg)
         self.results.append(conversions)
+
+    def GetResultStr(self):
+        resstr = []
+        rescount = len(self.results) - 1
+        for pos in range(rescount):
+            resstr.append(str(self.results[pos]))
+        return resstr
 
     def __str__(self):
         res = ''
@@ -117,7 +140,8 @@ def findNearestSeg(segment, sortedsegments):
     return filteredseg[minpos]
 
 
-def ReadSegmentsCSV(filename):
+def ReadSegmentsCSV(prefix, parentname):
+    filename = prefix + '_' + parentname + '.csv'
     segments = []
     with open(filename, 'r') as file:
         lines = file.readlines()[1:]
@@ -126,54 +150,65 @@ def ReadSegmentsCSV(filename):
     for line in lines:
         parts = line.split(',')
         parts = [p.strip('\"') for p in parts]
-        geneseg = GeneSegment(parts[1], int(parts[2]), int(parts[3]))
+        geneseg = GeneSegment(parts[1], int(parts[2]), int(parts[3]), parentname)
         segments.append(geneseg)
     
     return segments
     
+def CalculateCrossover(segmentresult, costat):
+    rescocount = len(segmentresult.results) - 1
+    if rescocount > 0:
+        for id in range(rescocount):
+            partlength = len(segmentresult.results[id].segments) - 1
+            if partlength > 0:
+                for pos in range(partlength):
+                    if segmentresult.results[id].segments[pos].id != segmentresult.results[id].segments[pos + 1].id:
+                        #costat[segmentresult.results[id].segments[pos].id] += 1
+                        costat[segmentresult.results[id].segments[0].id] += 1
 
 def OutputResult(prefix):
-    file1name = prefix + '_F1.csv'
-    file2name = prefix + '_NA.csv'
-    segments1 = ReadSegmentsCSV(file1name)
+    segments1 = ReadSegmentsCSV(prefix, 'F1')
     segments1.sort()
+    print('Processing ' + prefix + 'F1')
     result1 = MergeSegments(segments1)
-    segments2 = ReadSegmentsCSV(file2name)
+    segments2 = ReadSegmentsCSV(prefix, 'NA')
     segments2.sort()
+    print('Processing ' + prefix + 'NA')
     result2 = MergeSegments(segments2)
     costat = { 'A': 0, 'B': 0, 'C': 0, 'D': 0}
-    res1cocount = len(result1.results) - 1
-    if res1cocount > 0:
-        for id in range(res1cocount):
-            partlength = len(result1.results[id]) - 1
-            if partlength > 1:
-                for pos in range(partlength):
-                    if result1.results[id].segments[pos].id != result1.results[id].segments[pos + 1].id:
-                        costat[result1.results[id].segments[pos].id] += 1
-                        costat[result1.results[id].segments[pos].id + 1] += 1
+    CalculateCrossover(result1, costat)
+    CalculateCrossover(result2, costat)
 
-    coresult = prefix + ','
+    resstr = result1.GetResultStr() + result2.GetResultStr()
+    resstr.sort()
+
+    coresult = prefix + ',' + resstr[0] + ',' + str(costat['A']) + ',' + resstr[1] + ',' + str(costat['B']) + ',' + resstr[2] + ',' + str(costat['C']) + ',' + resstr[3] + ',' + str(costat['D'])
+    totalcount =  sum(costat.values())
+    coresult += ',' + str(totalcount) + '\n'
     # write result
     foutcrossover = open('crossoverstat.csv', 'a')
+    foutcrossover.write(coresult)
     foutconversion = open('conversion.csv', 'a')
+    for segment in result1.results[-1].segments:
+        convstr = prefix + str(segment) + '\n'
+        foutconversion.write(convstr)
+    for segment in result2.results[-1].segments:
+        convstr = prefix + str(segment) + '\n'
+        foutconversion.write(convstr)
 
-y12segs = []
-
-#y12segs.append(GeneSegment('A', 27051, 126600))
-#y12segs.append(GeneSegment('A', 129476, 132005))
-#y12segs.append(GeneSegment('A', 194781, 197996))
-#y12segs.append(GeneSegment('B', 135827, 138160))
-#y12segs.append(GeneSegment('C', 50270, 195585))
-#y12segs.append(GeneSegment('D', 27051, 49114))
-#y12segs.append(GeneSegment('D', 133361, 197996))
-
-y12segs.append(GeneSegment('A',126656,129075))
-y12segs.append(GeneSegment('A',132468,194626))
-y12segs.append(GeneSegment('B',	27141,135417))
-y12segs.append(GeneSegment('B',	138806,197996))
-y12segs.append(GeneSegment('C',27141,50024))
-y12segs.append(GeneSegment('C',196113,197996))
-y12segs.append(GeneSegment('D',49247,133198))
-y12segs.sort()
-
-
+# Example code:
+#
+# firstly put this file to the same folder as all tetrads, then open terminal in that folder, run:
+# python -i ./SegmentMerge.py
+#
+# within python run:
+# OutputResult('D01')
+# the result would be created into two files, crossoverstat,csv and conversion.csv
+#
+# in order to run all files you could run something like:
+# for i in range(1, 16):
+#    filename = 'D%02d' % i
+#    OutputResult(filename)
+# this should run through all files between range 1..15
+#
+# the code cannot handle overlap at the moment
